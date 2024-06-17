@@ -21,6 +21,7 @@ INPUTS:
     id,sequence,position_weight
     1,MAKLSKJF,"1:A:0.4,2:K:0.3,3:L:0.2"
     ```
+- `sequence_id_subset` (List[str]): List of sequence ids to generate variants for
 - `output_path` (str): Path to the output file
 - `esm_model` (str): Name of ESM model to use
 - `max_depths` (List[int]): List of number of positions to allow to vary
@@ -180,6 +181,10 @@ def main(args):
     assert 'position_weight' in scaffold_table, "position_weight column not found in scaffold table."
     scaffold_table['position_weight'] = scaffold_table.apply(lambda row: parse_position_weights(row['position_weight'], row['sequence']), axis=1)
 
+    subset = args.sequence_id_subset
+    if subset:
+        scaffold_table = scaffold_table[scaffold_table['id'].isin(subset)]
+
     esm_expert = evo_prot_grad.get_expert(
         expert_name='esm',
         temperature=1.0,
@@ -221,6 +226,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--scaffold_table', type=str, required=True)
+    parser.add_argument('--sequence_id_subset', type=str, nargs='+', required=False)
     parser.add_argument('--output_path', type=str, required=True)
     parser.add_argument('--esm_model', type=str, required=True)
     parser.add_argument('--max_depths', type=int, nargs='+', required=True)
