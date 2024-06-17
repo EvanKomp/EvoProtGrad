@@ -14,7 +14,7 @@ INPUTS:
 - `scaffold_table` (str): Path to the scaffold table
     This is a csv file with `id`, `sequence`, and `position_weight` columns.
     The sequence is the wild type sequence.
-    The position weight is a string listing positions that are important, their current AA, and their importance weight of the form '<position>:<AA>:<weight>,<position>:<AA>:<weight>,...'.
+    The position weight is a string listing positions that are important, their current AA, and their importance weight of the form '<position>:<AA>:<weight>;<position>:<AA>:<weight>;...'.
     Positions are 1 indexed.
     For example, a row in the dataframe might look like:
     ```
@@ -73,7 +73,7 @@ def get_n_mutations(sequence, variant):
 def parse_position_weights(position_weight, sequence):
     """Parse position weights into a dictionary.
     
-    Input is of the form '1:A:0.4,2:K:0.3,3:L:0.2'
+    Input is of the form '1:A:0.4;2:K:0.3;3:L:0.2'
     Convert to a dictionary of the form {0: 0.4, 1: 0.3, 2: 0.2}
     Makes it 0 indexed as expected by EvoProtGrad.
     Also checks that AA at position is correct.
@@ -86,16 +86,16 @@ def parse_position_weights(position_weight, sequence):
         dict: Dictionary of position weights
     """
     position_weights = {}
-    for pos_aa_weight in position_weight.split(','):
+    for pos_aa_weight in position_weight.split(';'):
         pos, aa, weight = pos_aa_weight.split(':')
         pos = int(pos) - 1
         assert sequence[pos] == aa, f"AA at position {pos} is not {aa} as expected."
         position_weights[pos] = float(weight)
 
     # normalize weights
-    max_weight = max(position_weights.values())
+    sum_weight = sum(position_weights.values())
     for pos in position_weights:
-        position_weights[pos] /= max_weight
+        position_weights[pos] /= sum_weight
     return position_weights
 
 def variable_positions_to_fixed_positions(positions, sequence_length):
@@ -147,7 +147,7 @@ def generate_variants(expert_list, sequence, sequence_id, max_depth, batch_size,
             preserved_regions=fixed_positions,
             max_mutations=max_depth,
             parallel_chains=variants_per_batch,
-            n_steps=10000, # used in the paper
+            n_steps=500, # 10000 used in the paper
             verbose=False,
             output='best'
         )
@@ -156,16 +156,18 @@ def generate_variants(expert_list, sequence, sequence_id, max_depth, batch_size,
         # capitalize mutated positions
         new_variants = []
         for variant in variants:
-            new_variant = list(sequence)
+            new_variant = variant.lower().split()
             for pos in positions_chosen:
-                if new_variant[pos] != sequence[pos]:
+                if new_variant[pos] != sequence[pos].lower():
                     new_variant[pos] = new_variant[pos].upper()
+                else:
+                    new_variant[pos] = new_variant[pos].lower()
             new_variants.append(''.join(new_variant))
         variants = new_variants
 
 
         n_mutations = [get_n_mutations(sequence, variant) for variant in variants]
-        positions = [';'.join(positions_chosen)] * len(variants)
+        positions = [';'.join(positions_chosen.astype(str))] * len(variants)
         ids = [f"{sequence_id}_{max_depth}_{batch}_{i}" for i in range(len(variants))]
         scaffolds = [sequence_id] * len(variants)
         yield pd.DataFrame({'scaffold': scaffolds, 'id': ids, 'sequence': variants, 'n_mutations': n_mutations, 'positions': positions, 'score': scores})
@@ -197,7 +199,7 @@ def main(args):
     with open(args.output_path, 'w') as f:
         # write to output one batch at a time
         f.write('scaffold,id,sequence,n_mutations,positions,score\n')
-        with tqdm(total=max_calls) as pbar:
+        with tqdm(total=max_calls, desc="Sampler calls") as pbar:
             for _, row in scaffold_table.iterrows():
                 sequence = row['sequence']
                 sequence_id = row['id']
@@ -208,8 +210,13 @@ def main(args):
                         logging.info(f"Generated {len(df)} variants for {sequence_id} at max_depth {max_depth}")
                         pbar.update(1)
     # open up the file and remove any duplicate sequences
+    logging.info(f"Generated a total of {len(df)} sequences")
     df = pd.read_csv(args.output_path)
     df = df.drop_duplicates(subset=['sequence', 'scaffold'])
+    logging.info(f"After dropping duplicates: {len(df)} sequences")
+    # also drop 0 mutations
+    df = df[df['n_mutations']>0]
+    logging.info(f"After dropping WT repeats: {len(df)} sequences")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
