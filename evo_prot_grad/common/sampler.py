@@ -231,7 +231,7 @@ class DirectedEvolution:
                     approx_forward_expert_change[pos_mask] = -np.inf
 
                     cd_forward = torch.distributions.one_hot_categorical.OneHotCategorical(
-                        probs=utils.safe_logits_to_probs(approx_forward_expert_change))
+                        probs=utils.safe_logits_to_probs(approx_forward_expert_change), validate_args=False)
                     forward_categoricals += [cd_forward]
                     changes_all = cd_forward.sample((1,)).squeeze(0)
                     onehot_Idx += [changes_all]
@@ -258,7 +258,7 @@ class DirectedEvolution:
                 log_ratio = 0
                 for id in range(len(onehot_Idx)):
                     cd_reverse = torch.distributions.one_hot_categorical.OneHotCategorical(
-                        probs=utils.safe_logits_to_probs(reverse_score_change[:,id]))
+                        probs=utils.safe_logits_to_probs(reverse_score_change[:,id]), validate_args=False)
                     log_ratio += u_mask[:,id] * (cd_reverse.log_prob(onehot_Idx[id]) - forward_categoricals[id].log_prob(onehot_Idx[id]))
                 
                 #log_acc = log_backwd - log_fwd
