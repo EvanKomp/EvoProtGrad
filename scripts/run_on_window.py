@@ -88,6 +88,8 @@ def parse_position_weights(position_weight, sequence):
     """
     position_weights = {}
     for pos_aa_weight in position_weight.split(';'):
+        if pos_aa_weight == '':
+            continue
         pos, aa, weight = pos_aa_weight.split(':')
         pos = int(pos) - 1
         assert sequence[pos] == aa, f"AA at position {pos} is not {aa} as expected."
@@ -185,12 +187,16 @@ def main(args):
     if subset:
         scaffold_table = scaffold_table[scaffold_table['id'].isin(subset)]
 
+    print(scaffold_table)
+    
     esm_expert = evo_prot_grad.get_expert(
         expert_name='esm',
         temperature=1.0,
         device='cuda',
         model=EsmForMaskedLM.from_pretrained(args.esm_model),
-        tokenizer=AutoTokenizer.from_pretrained(args.esm_model)
+        tokenizer=AutoTokenizer.from_pretrained(args.esm_model),
+        scoring_strategy='mutant_marginal'
+        
     )
     expert_list = [esm_expert]
 
